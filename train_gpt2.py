@@ -1,8 +1,10 @@
 from dataclasses import dataclass
+import time
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
 import tiktoken
+import time
 
 class CasualSelfAttention(nn.Module):
 
@@ -241,17 +243,25 @@ for i in range(num_return_sequences):
     print(f"{decoded}")
 '''
 
-train_data = DataLoaderLite(B=4, T=32)
+#train_data = DataLoaderLite(B=16, T=1024)
+train_data = DataLoaderLite(B=2, T=1024)
 
 model = GPT(GPTconfig())
 model.to(device)
 optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
 
 for i in range(50):
+    t0 = time.time()
     x, y = train_data.nex_batch()
     x, y = x.to(device), y.to(device)
     optimizer.zero_grad()
-    logits, loss = model(x, y)
+    with torch.autocast(device_type=device, dtype=torch.bfloat16):
+        logits, loss = model(x, y)
     loss.backward()
     optimizer.step()
-    print(f"Step {i+1}, Loss: {loss.item():.4f}")
+    torch.cuda.synchronize()
+
+    t1 = time.time()
+    dt = (t1 - t0) * 1000
+    tokens_per_second = (train_data.B * train_data.T) / (t1 - t0)
+    print(f"Step {i+1}, Loss: {loss.item():.4f}, Time: {dt:.2f} ms, Tokens/sec: {tokens_per_second:.2f}")
